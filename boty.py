@@ -82,7 +82,7 @@ def auto_informer():
 threading.Thread(target=auto_informer, daemon=True).start()
 
 # --- SOHBET DİNLEME ---
-# Mevcut satırı şununla değiştirin:
+
 chat = pytchat.create(video_id=VIDEO_ID, force_replay=True)
 while chat.is_alive():
     try:
