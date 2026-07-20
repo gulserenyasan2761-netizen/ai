@@ -67,7 +67,8 @@ def auto_informer():
 
 threading.Thread(target=auto_informer, daemon=True).start()
 
-chat = pytchat.create(video_id=VIDEO_ID)
+# Mevcut satırı şununla değiştirin:
+chat = pytchat.create(video_id=VIDEO_ID, force_replay=True)
 logger.info("Bot dinliyor...")
 
 while chat.is_alive():
