@@ -4,23 +4,23 @@ import time
 import logging
 import re
 import socket
+import os
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
 from groq import Groq
 
 # --- AYARLAR ---
 VIDEO_ID = "8xBHzbfnAbY"
 GROQ_API_KEY = "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"
-MESSAGE_DELAY = 3 
 SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
 BAD_WORDS = ["küfür1", "argo1", "küfür2"]
 
-# Timeout ayarları[cite: 3]
 socket.setdefaulttimeout(60)
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# AI İstemci Kurulumu
 client = Groq(api_key=GROQ_API_KEY)
 
 def clean_and_format(text):
@@ -30,39 +30,32 @@ def clean_and_format(text):
     for word in words_to_censor:
         pattern = re.compile(re.escape(word), re.IGNORECASE)
         text = pattern.sub("SANSÜRLENMİŞ", text)
-    # Cümle başını büyük yap, gerisini olduğu gibi bırak[cite: 3]
     return text[0].upper() + text[1:] if len(text) > 0 else text
 
-def evaluate_math(text):
-    clean_text = text.replace(" ", "")
-    if any(op in clean_text for op in ["+", "-", "*", "/"]):
-        if all(c.isdigit() or c in "+-*/.()" for c in clean_text):
-            try: return str(eval(clean_text, {"__builtins__": None}, {}))
-            except: return None
-    return None
-
 def get_authenticated_service():
-    flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-    creds = flow.run_local_server(port=8080, open_browser=False)
+    creds = None
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if not creds or not creds.valid:
+        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+        creds = flow.run_local_server(port=8080)
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
     return build('youtube', 'v3', credentials=creds)
 
 def get_live_chat_id(youtube, video_id):
     response = youtube.videos().list(part="liveStreamingDetails", id=video_id).execute()
-    if 'items' in response and len(response['items']) > 0:
-        return response['items'][0]['liveStreamingDetails'].get('activeLiveChatId')
-    return None
+    return response['items'][0]['liveStreamingDetails'].get('activeLiveChatId')
 
-def send_message(youtube, live_chat_id, text, delay=MESSAGE_DELAY):
+def send_message(youtube, live_chat_id, text):
     text = clean_and_format(text)
-    time.sleep(delay)
     try:
         youtube.liveChatMessages().insert(
             part='snippet',
             body={'snippet': {'liveChatId': live_chat_id, 'type': 'textMessageEvent', 'textMessageDetails': {'messageText': text}}}
         ).execute()
-        logger.info(f"Mesaj: {text}")
     except Exception as e:
-        logger.error(f"Mesaj gönderilemedi: {e}")
+        logger.error(f"Hata: {e}")
 
 youtube = get_authenticated_service()
 chat_id = get_live_chat_id(youtube, VIDEO_ID)
@@ -80,19 +73,11 @@ logger.info("Bot dinliyor...")
 while chat.is_alive():
     try:
         for c in chat.get().sync_items():
-            # Botun kendi mesajlarına yanıt vermesini engelle[cite: 3]
             if c.author.isChatOwner: continue
-            
             msg = c.message.strip()
             auth = c.author.name
             
-            # Matematik
-            math_res = evaluate_math(msg)
-            if math_res:
-                send_message(youtube, chat_id, math_res)
-                continue
-
-            # Kebap Modu
+            # AI !dürüm Komutu[cite: 7]
             if msg.lower().startswith("!dürüm"):
                 siparis = msg[6:].strip() or "KARIŞIK"
                 prompt = f"Sen bir tavuk dürümcüsün. '{siparis}' siparişini aldım de ve '[SİPARİŞ] - [Dürüm CİNSİ] + [İÇECEK]' formatında cevap ver."
@@ -100,7 +85,7 @@ while chat.is_alive():
                 send_message(youtube, chat_id, f"@{auth} {ans}")
                 continue
 
-            # Komutlar
+            # AI !kel Komutu[cite: 7]
             if msg.lower().startswith("!kel"):
                 ans = client.chat.completions.create(messages=[{"role": "user", "content": msg[4:]}], model="openai/gpt-oss-120b").choices[0].message.content
                 send_message(youtube, chat_id, f"@{auth} {ans}")
